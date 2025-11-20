@@ -883,7 +883,29 @@ HTML_TEMPLATE = """
     function capturePhoto() { const v=document.getElementById('camera-stream'), c=document.getElementById('camera-canvas'); c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0); c.toBlob(b=>{ capturedBlob=b; document.getElementById('captured-img').src=URL.createObjectURL(b); document.getElementById('captured-img').classList.remove('hidden'); document.getElementById('retake-btn').classList.remove('hidden'); stopCamera(); },'image/jpeg'); }
     function previewImage(i,id){ if(i.files[0]){ const r=new FileReader(); r.onload=e=>{document.getElementById(id).src=e.target.result;document.getElementById(id).classList.remove('hidden');}; r.readAsDataURL(i.files[0]); }}
     
-    async function verifySignature() { const f1=document.getElementById('file-ref').files[0], f2=capturedBlob||document.getElementById('file-que').files[0]; if(!f1||!f2) return Swal.fire('Info','Upload both signatures','info'); const fd=new FormData(); fd.append('ref',f1); fd.append('que',f2,'c.jpg'); Swal.showLoading(); const res=await fetch('/api/verify_signature',{method:'POST',body:fd}); const d=await res.json(); Swal.close(); document.getElementById('sig-score').innerText=(d.score*100).toFixed(1)+'%'; document.getElementById('sig-result').classList.remove('hidden'); }
+    async function verifySignature() {
+        const f1=document.getElementById('file-ref').files[0], f2=capturedBlob||document.getElementById('file-que').files[0];
+        if(!f1||!f2) return Swal.fire('Info','Upload both signatures','info');
+        const fd=new FormData(); fd.append('ref',f1); fd.append('que',f2,'c.jpg');
+        Swal.showLoading();
+        const res=await fetch('/api/verify_signature',{method:'POST',body:fd});
+        const d=await res.json(); Swal.close();
+        document.getElementById('sig-score').innerText=(d.score*100).toFixed(1)+'%';
+        document.getElementById('sig-result').classList.remove('hidden');
+        
+        // FIX: Update verdict logic
+        const verdict = document.getElementById('sig-verdict');
+        if(d.score > 0.95) {
+            verdict.innerText = "GENUINE";
+            verdict.className = "inline-block px-6 py-2 rounded-full bg-emerald-500 text-white font-bold shadow-lg shadow-emerald-500/50";
+        } else if(d.score > 0.80) {
+             verdict.innerText = "INCONCLUSIVE";
+             verdict.className = "inline-block px-6 py-2 rounded-full bg-orange-500 text-white font-bold shadow-lg shadow-orange-500/50";
+        } else {
+            verdict.innerText = "FORGERY";
+            verdict.className = "inline-block px-6 py-2 rounded-full bg-rose-600 text-white font-bold shadow-lg shadow-rose-600/50";
+        }
+    }
     async function predictDisease() { const t=document.getElementById('symptom-input').value; if(!t) return; const res=await fetch('/api/predict_disease',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symptoms:t})}); const d=await res.json(); document.getElementById('pred-text').innerText=d.prediction; document.getElementById('prediction-result').classList.remove('hidden'); }
     async function checkFraud() { 
         const s=document.getElementById('symptom-input').value, c=document.getElementById('claim-input').value; 
@@ -896,7 +918,7 @@ HTML_TEMPLATE = """
         document.getElementById('score-risk').innerText = d.risk_score.toFixed(2); 
         document.getElementById('fraud-result').classList.remove('hidden');
         const badge = document.getElementById('risk-badge');
-        if(d.risk_score < 0.3) { badge.innerText = "LOW RISK"; badge.className = "w-full py-2 text-center font-bold rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/50"; } else if(d.risk_score < 0.6) { badge.innerText = "MEDIUM RISK"; badge.className = "w-full py-2 text-center font-bold rounded-lg bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-500/50"; } else { badge.innerText = "HIGH FRAUD RISK"; badge.className = "w-full py-2 text-center font-bold rounded-lg bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/50 animate-pulse"; }
+        if(d.risk_score < 0.1) { badge.innerText = "LOW RISK"; badge.className = "w-full py-2 text-center font-bold rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/50"; } else if(d.risk_score < 0.3) { badge.innerText = "MEDIUM RISK"; badge.className = "w-full py-2 text-center font-bold rounded-lg bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 border border-orange-200 dark:border-orange-500/50"; } else { badge.innerText = "HIGH FRAUD RISK"; badge.className = "w-full py-2 text-center font-bold rounded-lg bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/50 animate-pulse"; }
     }
 
     function initRoleBasedUI() {
