@@ -21,6 +21,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 # --- Optional: Advanced NLP & Vision ---
 try:
     from sentence_transformers import SentenceTransformer, util
+    from transformers import AutoTokenizer
     HAS_BERT = True
 except ImportError:
     HAS_BERT = False
@@ -41,12 +42,23 @@ def get_semantic_model():
     if HAS_BERT:
         if os.path.exists(CLIP_LOCAL_PATH):
             try:
-                return SentenceTransformer(CLIP_LOCAL_PATH)
+                model = SentenceTransformer(CLIP_LOCAL_PATH)
+                try:
+                    tokenizer = AutoTokenizer.from_pretrained(CLIP_LOCAL_PATH, use_fast=False)
+                    model.tokenizer = tokenizer
+                except Exception:
+                    pass
+                return model
             except:
                 pass
         try:
             # Download and save if not exists
             model = SentenceTransformer('clip-ViT-B-32')
+            try:
+                tokenizer = AutoTokenizer.from_pretrained('clip-ViT-B-32', use_fast=False)
+                model.tokenizer = tokenizer
+            except Exception:
+                pass
             model.save(CLIP_LOCAL_PATH)
             return model
         except:
@@ -878,9 +890,51 @@ HTML_TEMPLATE = """
     // --- Camera & AI Logic ---
     let stream = null; let capturedBlob = null;
     function setCamMode(mode) { const fileBox=document.getElementById('mode-file'), camBox=document.getElementById('mode-cam'); const tabFile=document.getElementById('tab-file'), tabCam=document.getElementById('tab-cam'); if(mode==='cam'){ fileBox.classList.add('hidden'); camBox.classList.remove('hidden'); tabCam.classList.add('bg-white', 'dark:bg-slate-700', 'shadow', 'text-slate-800', 'dark:text-white'); tabFile.classList.remove('bg-white', 'dark:bg-slate-700', 'shadow', 'text-slate-800', 'dark:text-white'); startCamera(); } else { camBox.classList.add('hidden'); fileBox.classList.remove('hidden'); tabFile.classList.add('bg-white', 'dark:bg-slate-700', 'shadow', 'text-slate-800', 'dark:text-white'); tabCam.classList.remove('bg-white', 'dark:bg-slate-700', 'shadow', 'text-slate-800', 'dark:text-white'); stopCamera(); } }
-    async function startCamera() { try { stream=await navigator.mediaDevices.getUserMedia({video:true}); document.getElementById('camera-stream').srcObject=stream; } catch(e){Swal.fire('Error','Cam access denied','error');} }
-    function stopCamera() { if(stream) stream.getTracks().forEach(t=>t.stop()); }
-    function capturePhoto() { const v=document.getElementById('camera-stream'), c=document.getElementById('camera-canvas'); c.width=v.videoWidth; c.height=v.videoHeight; c.getContext('2d').drawImage(v,0,0); c.toBlob(b=>{ capturedBlob=b; document.getElementById('captured-img').src=URL.createObjectURL(b); document.getElementById('captured-img').classList.remove('hidden'); document.getElementById('retake-btn').classList.remove('hidden'); stopCamera(); },'image/jpeg'); }
+    async function startCamera() {
+        try {
+            // Clear any previous captured image and state
+            const capImg = document.getElementById('captured-img');
+            if(capImg) { capImg.classList.add('hidden'); capImg.src = '';
+            }
+            capturedBlob = null;
+            const retakeBtn = document.getElementById('retake-btn');
+            if(retakeBtn) retakeBtn.classList.add('hidden');
+
+            // Ensure the video element is visible
+            const videoEl = document.getElementById('camera-stream');
+            if(videoEl) videoEl.classList.remove('hidden');
+
+            stream = await navigator.mediaDevices.getUserMedia({video:true});
+            document.getElementById('camera-stream').srcObject = stream;
+        } catch(e) {
+            Swal.fire('Error','Cam access denied','error');
+        }
+    }
+
+    function stopCamera() {
+        if(stream) stream.getTracks().forEach(t=>t.stop());
+        const videoEl = document.getElementById('camera-stream');
+        if(videoEl) videoEl.srcObject = null;
+    }
+
+    function capturePhoto() {
+        const v = document.getElementById('camera-stream');
+        const c = document.getElementById('camera-canvas');
+        if(!v || !c) return;
+        c.width = v.videoWidth || 640;
+        c.height = v.videoHeight || 480;
+        c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+        c.toBlob(b => {
+            capturedBlob = b;
+            const img = document.getElementById('captured-img');
+            img.src = URL.createObjectURL(b);
+            img.classList.remove('hidden');
+            // hide the live video while showing captured image
+            if(v) v.classList.add('hidden');
+            document.getElementById('retake-btn').classList.remove('hidden');
+            stopCamera();
+        }, 'image/jpeg');
+    }
     function previewImage(i,id){ if(i.files[0]){ const r=new FileReader(); r.onload=e=>{document.getElementById(id).src=e.target.result;document.getElementById(id).classList.remove('hidden');}; r.readAsDataURL(i.files[0]); }}
     
     async function verifySignature() {
@@ -906,7 +960,22 @@ HTML_TEMPLATE = """
             verdict.className = "inline-block px-6 py-2 rounded-full bg-rose-600 text-white font-bold shadow-lg shadow-rose-600/50";
         }
     }
-    async function predictDisease() { const t=document.getElementById('symptom-input').value; if(!t) return; const res=await fetch('/api/predict_disease',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symptoms:t})}); const d=await res.json(); document.getElementById('pred-text').innerText=d.prediction; document.getElementById('prediction-result').classList.remove('hidden'); }
+    async function predictDisease() {
+        const t = document.getElementById('symptom-input').value;
+        if(!t) return;
+        const res = await fetch('/api/predict_disease', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({symptoms: t})
+        });
+        const d = await res.json();
+        document.getElementById('pred-text').innerText = d.prediction || 'N/A';
+        const conf = typeof d.confidence === 'number' ? Math.max(0, Math.min(1, d.confidence)) : 0;
+        const pct = Math.round(conf * 100);
+        document.getElementById('pred-bar').style.width = pct + '%';
+        document.getElementById('pred-conf').innerText = pct + '%';
+        document.getElementById('prediction-result').classList.remove('hidden');
+    }
     async function checkFraud() { 
         const s=document.getElementById('symptom-input').value, c=document.getElementById('claim-input').value; 
         const res=await fetch('/api/check_fraud',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symptoms:s,claimed_disease:c})}); 
